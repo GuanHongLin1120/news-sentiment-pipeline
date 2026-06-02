@@ -16,7 +16,7 @@ TOPIC = "raw-news"
 def create_producer():
     """Create a Kafka producer that connects to our local Kafka broker."""
     return KafkaProducer(
-        bootstrap_servers="localhost:9092",
+        bootstrap_servers="localhost:9094",
         # Convert each Python dict into JSON bytes before sending
         value_serializer=lambda v: json.dumps(v).encode("utf-8")
     )

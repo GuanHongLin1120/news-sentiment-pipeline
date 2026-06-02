@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scoring-service
+  labels:
+    app: scoring-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scoring-service
+  template:
+    metadata:
+      labels:
+        app: scoring-service
+    spec:
+      containers:
+        - name: scoring-service
+          image: scoring-service:latest
+          imagePullPolicy: Never
+          env:
+            # Inject the Gemini API key from the Kubernetes Secret
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-secret
+                  key: GEMINI_API_KEY
+            # Kafka and Postgres run in Docker Compose on your Mac —
+            # the pod reaches them via host.docker.internal
+            - name: KAFKA_BOOTSTRAP
+              value: "kafka-service:9092"
+            - name: POSTGRES_HOST
+              value: "host.docker.internal"
