@@ -10,13 +10,14 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "scraper"))
 from cnbc_scraper import fetch_cnbc_news
 from finnhub_scraper import fetch_company_news
 
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 # The Kafka topic we will write all raw news into
 TOPIC = "raw-news"
 
 def create_producer():
     """Create a Kafka producer that connects to our local Kafka broker."""
     return KafkaProducer(
-        bootstrap_servers="localhost:9094",
+        bootstrap_servers=KAFKA_BOOTSTRAP,
         # Convert each Python dict into JSON bytes before sending
         value_serializer=lambda v: json.dumps(v).encode("utf-8")
     )

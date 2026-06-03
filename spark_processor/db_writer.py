@@ -1,7 +1,9 @@
 import json
 import psycopg2
+import os
 from kafka import KafkaConsumer
 
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 TOPIC = "scored-news"
 
 # PostgreSQL connection settings (matches docker-compose.yml)
@@ -16,7 +18,7 @@ DB_CONFIG = {
 def create_consumer():
     return KafkaConsumer(
         TOPIC,
-        bootstrap_servers="localhost:9092",
+        bootstrap_servers=KAFKA_BOOTSTRAP,
         auto_offset_reset="earliest",
         group_id="db-writer",
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),

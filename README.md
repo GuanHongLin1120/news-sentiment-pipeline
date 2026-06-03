@@ -48,6 +48,7 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 | **Storage** | PostgreSQL 16 |
 | **Visualization** | Grafana |
 | **Infrastructure** | Docker, Docker Compose |
+| **Orchestration** | Kubernetes (minikube), with in-cluster Kafka + deployed scoring service |
 | **Monitoring** | Kafdrop (Kafka UI) |
 
 ---
@@ -163,7 +164,8 @@ news-sentiment-pipeline/
 - [ ] Multi-LLM ensemble (Gemini + Claude + OpenAI) with inter-model agreement as a confidence signal
 - [ ] Scheduled / automated ingestion for continuous data flow
 - [ ] Cassandra integration for high-throughput time-series storage
-- [ ] Kubernetes deployment with Terraform-managed infrastructure
+- [x] Kubernetes deployment (in-cluster Kafka + containerized scoring service, Secret-managed credentials)
+- [ ] Terraform-managed infrastructure (infrastructure as code)
 - [ ] Correlation analysis: news sentiment vs. stock price movement
 
 ---
