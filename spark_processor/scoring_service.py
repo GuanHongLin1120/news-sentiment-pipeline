@@ -1,6 +1,7 @@
 import json
 import sys
 import os
+import time
 from kafka import KafkaConsumer, KafkaProducer
 
 # Import our Gemini analyzer (same folder)
@@ -16,7 +17,7 @@ def create_consumer():
         INPUT_TOPIC,
         bootstrap_servers=KAFKA_BOOTSTRAP,
         auto_offset_reset="earliest",
-        group_id="scoring-service_v2",
+        group_id="scoring-service",
         value_deserializer=lambda v: json.loads(v.decode("utf-8")),
     )
 
@@ -54,6 +55,7 @@ def main():
         producer.flush()  # flush each message since the service runs continuously
 
         print(f"[{count}] {analysis['sentiment']:>7} ({analysis['sentiment_score']:+.2f}) | {article['title'][:55]}")
+        time.sleep(2.5)  # throttle to stay under Groq's 30 req/min free-tier limit
 
 if __name__ == "__main__":
     main()
