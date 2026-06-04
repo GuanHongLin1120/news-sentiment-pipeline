@@ -79,10 +79,17 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 
 ## Dashboard
 
-The Grafana dashboard includes:
+The Grafana dashboard turns the scored news into live market-sentiment analytics.
 
-- **Sentiment Distribution** — count of bullish / bearish / neutral articles.
-- **Average Sentiment by Ticker** — mean sentiment score per stock, computed by splitting and unnesting the comma-separated ticker field in SQL.
+### Sentiment Distribution
+Count of bullish / bearish / neutral articles across the latest news batch.
+
+![Sentiment Distribution](images/sentiment-distribution.png)
+
+### Average Sentiment by Ticker
+Mean sentiment score per stock, computed by splitting and unnesting the comma-separated ticker field in SQL. Green bars indicate net-positive sentiment, red bars net-negative.
+
+![Average Sentiment by Ticker](images/avg-sentiment-by-ticker.png)
 
 ---
 
