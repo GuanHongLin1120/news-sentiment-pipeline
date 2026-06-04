@@ -25,9 +25,8 @@ spec:
                 secretKeyRef:
                   name: gemini-secret
                   key: GEMINI_API_KEY
-            # Kafka and Postgres run in Docker Compose on your Mac —
-            # the pod reaches them via host.docker.internal
+            # Kafka runs in-cluster; the pod reaches it via the internal
+            # Service DNS name. (Postgres is NOT accessed from this pod —
+            # db_writer.py runs on the host and writes to Postgres directly.)
             - name: KAFKA_BOOTSTRAP
               value: "kafka-service:9092"
-            - name: POSTGRES_HOST
-              value: "host.docker.internal"
