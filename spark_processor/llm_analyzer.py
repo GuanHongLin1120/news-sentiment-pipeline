@@ -1,19 +1,56 @@
 import os
 import json
 import time
-from google import genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# Initialize the Gemini client with your API key from .env
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# Select the LLM provider via env var; defaults to groq.
+# This is the single switch that makes the scoring layer provider-agnostic.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
 
-# The model to use — fast and cheap, good for high-volume scoring
-MODEL = "gemini-2.5-flash"
+# ---- Provider-specific clients & models (lazy: only init what we use) ----
+if LLM_PROVIDER == "groq":
+    from groq import Groq
+    _client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    _MODEL = "llama-3.3-70b-versatile"
+elif LLM_PROVIDER == "gemini":
+    from google import genai
+    _client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    _MODEL = "gemini-2.5-flash"
+else:
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}")
+
+
+def _call_groq(prompt):
+    """Provider-specific call: Groq (OpenAI-compatible chat interface)."""
+    response = _client.chat.completions.create(
+        model=_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+    return response.choices[0].message.content.strip()
+
+
+def _call_gemini(prompt):
+    """Provider-specific call: Gemini (single-string generate_content)."""
+    response = _client.models.generate_content(model=_MODEL, contents=prompt)
+    raw = response.text.strip()
+    # Gemini may wrap output in markdown fences; strip them
+    return raw.replace("```json", "").replace("```", "").strip()
+
+
+def _call_llm(prompt):
+    """Dispatch to the active provider. The rest of the code is provider-agnostic."""
+    if LLM_PROVIDER == "groq":
+        return _call_groq(prompt)
+    elif LLM_PROVIDER == "gemini":
+        return _call_gemini(prompt)
+
 
 def analyze_article(title, summary="", max_retries=3):
-    """Send one article to Gemini with retry logic for transient failures."""
+    """Score one article. Provider-agnostic: prompt, retry, and fallback
+    logic stay identical regardless of which LLM backend is selected."""
 
     prompt = f"""You are a financial news analyst. Analyze the following news article
 and respond with ONLY a JSON object (no markdown, no extra text) in this exact format:
@@ -31,12 +68,7 @@ Article summary: {summary}
 
     for attempt in range(1, max_retries + 1):
         try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-            )
-            raw = response.text.strip()
-            raw = raw.replace("```json", "").replace("```", "").strip()
+            raw = _call_llm(prompt)
             return json.loads(raw)
 
         except Exception as e:
@@ -55,13 +87,13 @@ Article summary: {summary}
             print(f"    (attempt {attempt} failed, retrying in {wait}s...)")
             time.sleep(wait)
 
+
 if __name__ == "__main__":
-    # Test with one real-looking headline
     test_title = "TSMC raises full-year revenue guidance on strong AI chip demand"
     test_summary = "The chipmaker cited robust orders from AI customers as the main driver."
 
-    print("Analyzing test article...\n")
+    print(f"Analyzing test article (provider={LLM_PROVIDER})...\n")
     result = analyze_article(test_title, test_summary)
 
-    print("Structured result from Gemini:")
+    print("Structured result:")
     print(json.dumps(result, indent=2))
