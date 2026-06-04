@@ -21,7 +21,7 @@ For each article it produces a structured record — bullish / bearish / neutral
 ```
   ┌─────────────┐     ┌─────────┐     ┌──────────────────┐     ┌─────────┐     ┌────────────┐     ┌──────────┐
   │ CNBC RSS  + │────▶│  Kafka  │────▶│  Scoring Service │────▶│  Kafka  │────▶│ PostgreSQL │────▶│ Grafana  │
-  │ Finnhub API │     │raw-news │     │  (Gemini LLM)    │     │ scored- │     │ (storage + │     │(dashboard)│
+  │ Finnhub API │     │raw-news │     │  (Groq / Gemini) │     │ scored- │     │ (storage + │     │(dashboard)│
   └─────────────┘     └─────────┘     └──────────────────┘     │  news   │     │  analytics)│     └──────────┘
        ingest          buffer          sentiment + NER         └─────────┘       SQL queries        visualize
                                                                                                 
@@ -33,7 +33,7 @@ For each article it produces a structured record — bullish / bearish / neutral
                   └───────────────┘
 ```
 
-Every component runs as a Docker container, orchestrated with Docker Compose.
+Every component runs as a Docker container. The infrastructure can be provisioned three ways: **Docker Compose** (standard local dev), **Kubernetes / minikube** (the scoring service + in-cluster Kafka), and **Terraform** (declarative IaC for the Docker stack).
 
 ---
 
@@ -44,11 +44,11 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 | **Ingestion** | Python, `feedparser` (CNBC RSS), Finnhub API |
 | **Message broker** | Apache Kafka (Confluent image, **KRaft mode** — no ZooKeeper) |
 | **Stream processing** | PySpark Structured Streaming |
-| **AI enrichment** | Google Gemini API (provider-agnostic design; extensible to Claude / OpenAI) |
+| **AI enrichment** | Groq (Llama 3.3 70B) primary, Google Gemini (2.5 Flash) secondary — provider-agnostic, switchable via `LLM_PROVIDER` (extensible to OpenAI / Claude) |
 | **Storage** | PostgreSQL 16 |
 | **Visualization** | Grafana |
 | **Infrastructure** | Docker, Docker Compose |
-| **Infrastructure as Code** | Terraform (Docker provider — declarative provisioning of the full infra stack) |
+| **Infrastructure as Code** | Terraform (kreuzwerker/docker provider — declarative provisioning of the full infra stack) |
 | **Orchestration** | Kubernetes (minikube), with in-cluster Kafka + deployed scoring service |
 | **Monitoring** | Kafdrop (Kafka UI) |
 
@@ -58,8 +58,9 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 
 - **Decoupled streaming architecture** — producers and consumers communicate only through Kafka topics (`raw-news`, `scored-news`). Each stage can fail or scale independently without losing data.
 - **KRaft-mode Kafka** — uses the modern ZooKeeper-less Kafka, with a dual-listener setup (host + internal Docker network) so both local scripts and containers can connect.
+- **Provider-agnostic LLM layer** — sentiment scoring is decoupled from any single LLM vendor. The active provider is chosen by the `LLM_PROVIDER` env var, so switching backends (Groq ↔ Gemini) requires no change to the prompt, retry, or fallback logic. When Gemini's free-tier quota was cut, the pipeline switched to Groq with a single env var.
 - **Structured LLM output** — the LLM is prompted to return strict JSON, converting unstructured text into a fixed schema suitable for analytics.
-- **Graceful degradation** — the scoring service wraps LLM calls in retry logic with exponential backoff; on persistent failure (e.g. rate limits) it falls back to a safe default rather than crashing the pipeline.
+- **Graceful degradation & rate limiting** — the scoring service wraps LLM calls in retry logic with exponential backoff and falls back to a safe default on persistent failure; it also throttles requests client-side to respect the provider's free-tier rate limits and avoid `429` errors.
 - **Stateful vs stateless services** — PostgreSQL and Grafana use named Docker volumes for persistence; stateless processing services can be recreated freely.
 - **Parameterized SQL inserts** — prevents SQL injection and keeps the storage layer safe.
 - **Infrastructure as Code** — the entire Docker infrastructure (network, broker, database, dashboard) is declared in Terraform, so the full stack provisions reproducibly with a single `terraform apply` and tears down cleanly with `terraform destroy`. State and lock files are gitignored to keep credentials out of version control.
@@ -98,7 +99,7 @@ Mean sentiment score per stock, computed by splitting and unnesting the comma-se
 ### Prerequisites
 - Docker & Docker Compose
 - Python 3.12
-- A Finnhub API key (free tier) and a Google Gemini API key (free tier)
+- A Finnhub API key (free tier), plus a Groq API key (primary) and/or a Google Gemini API key (secondary) — all free tier
 
 ### Setup
 
@@ -112,9 +113,9 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# 3. Add API keys to a .env file
-echo "FINNHUB_API_KEY=your_key_here" >> .env
-echo "GEMINI_API_KEY=your_key_here" >> .env
+# 3. Add API keys: copy the template and fill in your own keys
+cp .env.example .env
+# then edit .env and set FINNHUB_API_KEY, GROQ_API_KEY, (optionally GEMINI_API_KEY)
 
 # 4. Start the infrastructure (Kafka, Kafdrop, PostgreSQL, Grafana)
 docker compose up -d
@@ -127,13 +128,14 @@ docker exec -i postgres psql -U newsuser -d newsdb < spark_processor/schema.sql
 
 ```bash
 # Ingest news into Kafka
-python kafka_producer/producer.py
+python3 kafka_producer/producer.py
 
-# Score articles with the LLM and publish to scored-news
-python spark_processor/scoring_service.py
+# Score articles with the LLM and publish to scored-news (uses Groq by default;
+# switch with: LLM_PROVIDER=gemini python3 spark_processor/scoring_service.py)
+python3 spark_processor/scoring_service.py
 
 # Persist scored articles into PostgreSQL
-python spark_processor/db_writer.py
+python3 spark_processor/db_writer.py
 ```
 
 ### Access points
@@ -158,11 +160,16 @@ news-sentiment-pipeline/
 │   └── consumer.py
 ├── spark_processor/         # Processing, LLM scoring, storage
 │   ├── stream_processor.py  # Spark Structured Streaming
-│   ├── llm_analyzer.py      # Gemini sentiment/NER analysis
-│   ├── scoring_service.py   # Kafka → LLM → Kafka
+│   ├── llm_analyzer.py      # Provider-agnostic LLM scoring (Groq / Gemini)
+│   ├── scoring_service.py   # Kafka → LLM → Kafka (long-running, rate-limited)
 │   ├── db_writer.py         # Kafka → PostgreSQL
 │   └── schema.sql           # Database schema
+├── k8s/                     # Kubernetes manifests (in-cluster Kafka + scoring service)
+├── terraform/               # Terraform IaC (Docker provider)
+├── images/                  # Dashboard screenshots
+├── Dockerfile               # Builds the scoring-service image
 ├── docker-compose.yml       # All services
+├── .env.example             # Template for API keys
 └── requirements.txt
 ```
 
@@ -170,7 +177,7 @@ news-sentiment-pipeline/
 
 ## Roadmap
 
-- [ ] Multi-LLM ensemble (Gemini + Claude + OpenAI) with inter-model agreement as a confidence signal
+- [ ] Multi-LLM ensemble (Groq + Gemini + OpenAI) with inter-model agreement as a confidence signal
 - [ ] Scheduled / automated ingestion for continuous data flow
 - [ ] Cassandra integration for high-throughput time-series storage
 - [x] Kubernetes deployment (in-cluster Kafka + containerized scoring service, Secret-managed credentials)
