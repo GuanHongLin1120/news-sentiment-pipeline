@@ -48,6 +48,7 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 | **Storage** | PostgreSQL 16 |
 | **Visualization** | Grafana |
 | **Infrastructure** | Docker, Docker Compose |
+| **Infrastructure as Code** | Terraform (Docker provider — declarative provisioning of the full infra stack) |
 | **Orchestration** | Kubernetes (minikube), with in-cluster Kafka + deployed scoring service |
 | **Monitoring** | Kafdrop (Kafka UI) |
 
@@ -61,6 +62,7 @@ Every component runs as a Docker container, orchestrated with Docker Compose.
 - **Graceful degradation** — the scoring service wraps LLM calls in retry logic with exponential backoff; on persistent failure (e.g. rate limits) it falls back to a safe default rather than crashing the pipeline.
 - **Stateful vs stateless services** — PostgreSQL and Grafana use named Docker volumes for persistence; stateless processing services can be recreated freely.
 - **Parameterized SQL inserts** — prevents SQL injection and keeps the storage layer safe.
+- **Infrastructure as Code** — the entire Docker infrastructure (network, broker, database, dashboard) is declared in Terraform, so the full stack provisions reproducibly with a single `terraform apply` and tears down cleanly with `terraform destroy`. State and lock files are gitignored to keep credentials out of version control.
 
 ---
 
@@ -165,7 +167,7 @@ news-sentiment-pipeline/
 - [ ] Scheduled / automated ingestion for continuous data flow
 - [ ] Cassandra integration for high-throughput time-series storage
 - [x] Kubernetes deployment (in-cluster Kafka + containerized scoring service, Secret-managed credentials)
-- [ ] Terraform-managed infrastructure (infrastructure as code)
+- [x] Terraform-managed infrastructure (declarative IaC for Docker network + Kafka/Kafdrop/Postgres/Grafana, with outputs)
 - [ ] Correlation analysis: news sentiment vs. stock price movement
 
 ---
